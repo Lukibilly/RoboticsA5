@@ -1,4 +1,0 @@
-/home/lukibilly/Kether/Uni/Robotics/Assignments/Assignment5/tutorialPlan/build/CMakeFiles/tutorialPlan.dir
-/home/lukibilly/Kether/Uni/Robotics/Assignments/Assignment5/tutorialPlan/build/CMakeFiles/edit_cache.dir
-/home/lukibilly/Kether/Uni/Robotics/Assignments/Assignment5/tutorialPlan/build/CMakeFiles/rebuild_cache.dir
-/home/lukibilly/Kether/Uni/Robotics/Assignments/Assignment5/tutorialPlan/build/CMakeFiles/tutorialPlan_autogen.dir
