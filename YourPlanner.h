@@ -73,6 +73,8 @@ protected:
     ::rl::plan::VectorPtr q;
 
     ::rl::math::Real tmp;
+
+    bool exhausted = false;
   };
 
   typedef ::boost::adjacency_list_traits<
