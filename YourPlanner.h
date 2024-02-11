@@ -53,7 +53,10 @@ public:
   /** The sampler used for planning */
   ::rl::plan::Sampler* sampler;
 
+  uint most_fails = 0;
+
   bool use_goal_bias = false;
+  bool use_neighbor_exhaustion = false;
   float goal_bias = 0.05;
   ::std::string name = "Test";//"GoalProbability" + ::std::to_string(goal_bias);
 
@@ -75,6 +78,8 @@ protected:
     ::rl::math::Real tmp;
 
     bool exhausted = false;
+    uint fails = 0;
+    uint successes = 0;
   };
 
   typedef ::boost::adjacency_list_traits<

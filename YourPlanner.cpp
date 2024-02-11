@@ -104,7 +104,17 @@ YourPlanner::connect(Tree& tree, const Neighbor& nearest, const ::rl::math::Vect
 
   if (this->model->isColliding())
   {
+    tree[nearest.first].fails += 1;
+    if (tree[nearest.first].fails > 100 && this->use_neighbor_exhaustion){
+      tree[nearest.first].exhausted = true;
+    }
+    if (tree[nearest.first].fails > this->most_fails){
+      this->most_fails = tree[nearest.first].fails;
+      std::cout << "Most fails: " << this->most_fails << std::endl;
+    }
     return NULL;
+  }else{
+    tree[nearest.first].successes += 1;
   }
 
   ::rl::math::Vector next(this->model->getDof());
@@ -247,6 +257,7 @@ YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
   //Iterate through all vertices to find the nearest neighbour
   for (VertexIteratorPair i = ::boost::vertices(tree); i.first != i.second; ++i.first)
   {
+    if (tree[*i.first].exhausted) continue;
     ::rl::math::Real d = this->compute_distance(chosen, *tree[*i.first].q);
 
     if (d < p.second)
