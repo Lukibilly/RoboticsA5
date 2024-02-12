@@ -1,6 +1,7 @@
 #include <chrono>
 #include <rl/plan/SimpleModel.h>
 #include "YourSampler.h"
+#include <iostream>
 
 namespace rl
 {
@@ -9,6 +10,7 @@ namespace rl
         YourSampler::YourSampler() :
             Sampler(),
             randDistribution(0, 1),
+            normalDistribution(0, 1),
             randEngine(::std::random_device()())
         {
         }
@@ -20,11 +22,6 @@ namespace rl
         ::rl::math::Vector
         YourSampler::generate()
         {
-            // Our template code performs uniform sampling.
-            // You are welcome to change any or all parts of the sampler.
-            // BUT PLEASE MAKE SURE YOU CONFORM TO JOINT LIMITS,
-            // AS SPECIFIED BY THE ROBOT MODEL!
-
             ::rl::math::Vector sampleq(this->model->getDof());
 
             ::rl::math::Vector maximum(this->model->getMaximum());
@@ -45,16 +42,63 @@ namespace rl
             return sampleq;
         }
 
+        ::rl::math::Vector
+        YourSampler::generateGaussian()
+        {
+            ::rl::math::Vector sampleq(this->model->getDof());
+            bool valid = false;
+
+            ::rl::math::Vector maximum(this->model->getMaximum());
+            ::rl::math::Vector minimum(this->model->getMinimum());
+            
+            while(!valid){
+                // Generate Sample
+                for (::std::size_t i = 0; i < this->model->getDof(); ++i)
+                {
+                    sampleq(i) = minimum(i) + this->rand() * (maximum(i) - minimum(i));
+                }
+                // Check if sample is valid
+                ::rl::math::Vector sampleqgauss(this->model->getDof());
+                for (::std::size_t i = 0; i < this->model->getDof(); ++i)
+                {
+                    sampleqgauss(i) = sampleq(i) + this->gauss() * this->sigma(i);
+                }
+                this->model->clip(sampleqgauss);
+                this->model->setPosition(sampleqgauss);
+                this->model->updateFrames();
+                valid = this->model->isColliding();
+            }
+
+            return sampleq;
+        }
+
         ::std::uniform_real_distribution< ::rl::math::Real>::result_type
         YourSampler::rand()
         {
             return this->randDistribution(this->randEngine);
         }
 
+        ::std::normal_distribution< ::rl::math::Real>::result_type
+        YourSampler::gauss()
+        {
+            return this->normalDistribution(this->randEngine);
+        }
+
         void
         YourSampler::seed(const ::std::mt19937::result_type& value)
         {
             this->randEngine.seed(value);
+        }
+
+        void
+        YourSampler::setSigma(const ::rl::math::Real delta)
+        {
+            this->sigma = ::rl::math::Vector(this->model->getDof());
+            
+            for (::std::size_t i = 0; i < this->model->getDof(); ++i)
+            {
+                this->sigma(i) = delta;
+            }
         }
     }
 }

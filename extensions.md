@@ -11,6 +11,7 @@
 
 ## 3.Distance metric
 - Distance metric in workspace??? (Jacobian Transpose)
+- Distance metric in config space: Value Distances of big joint more than others (Big joint moves all others)
 
 ## 4. Connect/Extend
 
