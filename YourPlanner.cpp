@@ -19,9 +19,11 @@ YourPlanner::YourPlanner() :
   goal_bias = 0.1;
   use_neighbor_exhaustion = false;
   exhaustion_limit = 100;
-  use_gaussian_sampling = true;
+  use_gaussian_sampling = false;
   use_better_connect = false;
-  name = "GaussianSampling";
+  use_bridge_sampling = true;
+  sigma = 2*this->delta;
+  name = "BridgeSampling2delta";
 }
 
 YourPlanner::~YourPlanner()
@@ -80,6 +82,10 @@ YourPlanner::choose(::rl::math::Vector& chosen, const ::rl::math::Vector& goal)
   if (this->use_gaussian_sampling)
   {
     chosen = this->sampler->generateGaussian();
+  }
+  else if(this->use_bridge_sampling)
+  {
+    chosen = this->sampler->generateBridge();
   }
   else
   {
@@ -308,7 +314,7 @@ YourPlanner::reset()
 bool // TODO: OPTIMIZE
 YourPlanner::solve()
 {
-  this->sampler->setSigma(this->delta);
+  this->sampler->setSigma(this->sigma);
   this->time = ::std::chrono::steady_clock::now();
   // Define the roots of both trees
   this->begin[0] = this->addVertex(this->tree[0], ::std::make_shared< ::rl::math::Vector >(*this->start));
@@ -361,7 +367,5 @@ YourPlanner::solve()
     }
 
   }
-
   return false;
-
 }

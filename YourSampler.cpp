@@ -72,6 +72,48 @@ namespace rl
             return sampleq;
         }
 
+        ::rl::math::Vector
+        YourSampler::generateBridge()
+        {
+            ::rl::math::Vector sampleq(this->model->getDof());
+            bool valid = false;
+
+            ::rl::math::Vector maximum(this->model->getMaximum());
+            ::rl::math::Vector minimum(this->model->getMinimum());
+            
+            while(!valid){
+                // Generate Sample
+                for (::std::size_t i = 0; i < this->model->getDof(); ++i)
+                {
+                    sampleq(i) = minimum(i) + this->rand() * (maximum(i) - minimum(i));
+                }
+                // Check if sample is valid
+                ::rl::math::Vector sampleqgaussl(this->model->getDof());
+                ::rl::math::Vector sampleqgaussr(this->model->getDof());
+                for (::std::size_t i = 0; i < this->model->getDof(); ++i)
+                {
+                    sampleqgaussr(i) = sampleq(i) + this->gauss() * this->sigma(i);
+                    sampleqgaussl(i) = sampleq(i) - this->gauss() * this->sigma(i);
+                }
+                this->model->clip(sampleqgaussl);
+                this->model->setPosition(sampleqgaussl);
+                this->model->updateFrames();
+                bool validl = this->model->isColliding();
+                if (!validl){
+                    continue;
+                }
+                this->model->clip(sampleqgaussr);
+                this->model->setPosition(sampleqgaussr);
+                this->model->updateFrames();
+                bool validr = this->model->isColliding();
+                if(validr){
+                    valid = true;
+                }
+            }
+
+            return sampleq;
+        }
+
         ::std::uniform_real_distribution< ::rl::math::Real>::result_type
         YourSampler::rand()
         {
