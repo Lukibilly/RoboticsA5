@@ -16,14 +16,14 @@ YourPlanner::YourPlanner() :
   tree(2)
 {
   use_goal_bias = false;
-  goal_bias = 0.1;
+  goal_bias = 0.01;
   use_neighbor_exhaustion = false;
   exhaustion_limit = 100;
-  use_gaussian_sampling = false;
+  use_gaussian_sampling = true;
   use_better_connect = false;
-  use_bridge_sampling = true;
-  sigma = 2*this->delta;
-  name = "BridgeSampling2delta";
+  use_bridge_sampling = false;
+  sigma = 0.1;
+  name = "GS0.1";
 }
 
 YourPlanner::~YourPlanner()
