@@ -123,7 +123,7 @@ protected:
   ////////////////////////////////////////////////////////////////////////
 
   /** Add an edge to the RR-Tree */
-  virtual Edge addEdge(const Vertex& u, const Vertex& v, Tree& tree);
+  virtual Edge addEdge(const Vertex u, const Vertex v, Tree& tree);
 
   /** Add a vertex to the RR-Tree */
   Vertex addVertex(Tree& tree, const ::rl::plan::VectorPtr& q);

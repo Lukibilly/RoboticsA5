@@ -3,32 +3,26 @@
 #include "YourSampler.h"
 #include <iostream>
 
-namespace rl
-{
-    namespace plan
-    {
+namespace rl {
+    namespace plan {
         YourSampler::YourSampler() :
-            Sampler(),
-            randDistribution(0, 1),
-            normalDistribution(0, 1),
-            randEngine(::std::random_device()())
-        {
+                Sampler(),
+                randDistribution(0, 1),
+                normalDistribution(0, 1),
+                randEngine(::std::random_device()()) {
         }
 
-        YourSampler::~YourSampler()
-        {
+        YourSampler::~YourSampler() {
         }
 
         ::rl::math::Vector
-        YourSampler::generate()
-        {
+        YourSampler::generate() {
             ::rl::math::Vector sampleq(this->model->getDof());
 
             ::rl::math::Vector maximum(this->model->getMaximum());
             ::rl::math::Vector minimum(this->model->getMinimum());
 
-            for (::std::size_t i = 0; i < this->model->getDof(); ++i)
-            {
+            for (::std::size_t i = 0; i < this->model->getDof(); ++i) {
                 sampleq(i) = minimum(i) + this->rand() * (maximum(i) - minimum(i));
             }
 
@@ -43,24 +37,21 @@ namespace rl
         }
 
         ::rl::math::Vector
-        YourSampler::generateGaussian()
-        {
+        YourSampler::generateGaussian() {
             ::rl::math::Vector sampleq(this->model->getDof());
             bool valid = false;
 
             ::rl::math::Vector maximum(this->model->getMaximum());
             ::rl::math::Vector minimum(this->model->getMinimum());
-            
-            while(!valid){
+
+            while (!valid) {
                 // Generate Sample
-                for (::std::size_t i = 0; i < this->model->getDof(); ++i)
-                {
+                for (::std::size_t i = 0; i < this->model->getDof(); ++i) {
                     sampleq(i) = minimum(i) + this->rand() * (maximum(i) - minimum(i));
                 }
                 // Check if sample is valid
                 ::rl::math::Vector sampleqgauss(this->model->getDof());
-                for (::std::size_t i = 0; i < this->model->getDof(); ++i)
-                {
+                for (::std::size_t i = 0; i < this->model->getDof(); ++i) {
                     sampleqgauss(i) = sampleq(i) + this->gauss() * this->sigma(i);
                 }
                 this->model->clip(sampleqgauss);
@@ -73,40 +64,42 @@ namespace rl
         }
 
         ::rl::math::Vector
-        YourSampler::generateBridge()
-        {
+        YourSampler::generateBridge() {
             ::rl::math::Vector sampleq(this->model->getDof());
             bool valid = false;
 
-            ::rl::math::Vector maximum(this->model->getMaximum());
-            ::rl::math::Vector minimum(this->model->getMinimum());
-            
-            while(!valid){
-                // Generate Sample
-                for (::std::size_t i = 0; i < this->model->getDof(); ++i)
-                {
-                    sampleq(i) = minimum(i) + this->rand() * (maximum(i) - minimum(i));
+            while (!valid) {
+                // Generate collision-free sample
+                bool validBridge = false;
+                while (!validBridge) {
+                    sampleq = this->generate();
+                    this->model->setPosition(sampleq);
+                    this->model->updateFrames();
+                    validBridge = !this->model->isColliding();
+
                 }
-                // Check if sample is valid
+
+                // Add Gaussian Distance
                 ::rl::math::Vector sampleqgaussl(this->model->getDof());
                 ::rl::math::Vector sampleqgaussr(this->model->getDof());
-                for (::std::size_t i = 0; i < this->model->getDof(); ++i)
-                {
+                for (::std::size_t i = 0; i < this->model->getDof(); ++i) {
                     sampleqgaussr(i) = sampleq(i) + this->gauss() * this->sigma(i);
                     sampleqgaussl(i) = sampleq(i) - this->gauss() * this->sigma(i);
                 }
+
+                // Check for collisions
                 this->model->clip(sampleqgaussl);
                 this->model->setPosition(sampleqgaussl);
                 this->model->updateFrames();
                 bool validl = this->model->isColliding();
-                if (!validl){
+                if (!validl) {
                     continue;
                 }
                 this->model->clip(sampleqgaussr);
                 this->model->setPosition(sampleqgaussr);
                 this->model->updateFrames();
                 bool validr = this->model->isColliding();
-                if(validr){
+                if (validr) {
                     valid = true;
                 }
             }
@@ -114,31 +107,26 @@ namespace rl
             return sampleq;
         }
 
-        ::std::uniform_real_distribution< ::rl::math::Real>::result_type
-        YourSampler::rand()
-        {
+        ::std::uniform_real_distribution<::rl::math::Real>::result_type
+        YourSampler::rand() {
             return this->randDistribution(this->randEngine);
         }
 
-        ::std::normal_distribution< ::rl::math::Real>::result_type
-        YourSampler::gauss()
-        {
+        ::std::normal_distribution<::rl::math::Real>::result_type
+        YourSampler::gauss() {
             return this->normalDistribution(this->randEngine);
         }
 
         void
-        YourSampler::seed(const ::std::mt19937::result_type& value)
-        {
+        YourSampler::seed(const ::std::mt19937::result_type &value) {
             this->randEngine.seed(value);
         }
 
         void
-        YourSampler::setSigma(const ::rl::math::Real delta)
-        {
+        YourSampler::setSigma(const ::rl::math::Real delta) {
             this->sigma = ::rl::math::Vector(this->model->getDof());
-            
-            for (::std::size_t i = 0; i < this->model->getDof(); ++i)
-            {
+
+            for (::std::size_t i = 0; i < this->model->getDof(); ++i) {
                 this->sigma(i) = delta;
             }
         }

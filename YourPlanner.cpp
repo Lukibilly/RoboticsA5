@@ -7,365 +7,337 @@
 #include <iostream>
 
 YourPlanner::YourPlanner() :
-  Planner(),
-  delta(1.0f),
-  epsilon(1.0e-3f),
-  sampler(NULL),
-  begin(2),
-  end(2),
-  tree(2)
-{
-  use_goal_bias = false;
-  goal_bias = 0.1;
-  use_neighbor_exhaustion = false;
-  exhaustion_limit = 100;
-  use_gaussian_sampling = false;
-  use_better_connect = false;
-  use_bridge_sampling = true;
-  sigma = 2*this->delta;
-  name = "BridgeSampling2delta";
+        Planner(),
+        delta(1.0f),
+        epsilon(1.0e-3f),
+        sampler(NULL),
+        begin(2),
+        end(2),
+        tree(2) {
+    use_goal_bias = false;
+    goal_bias = 0.1;
+    use_neighbor_exhaustion = false;
+    exhaustion_limit = 100;
+    use_gaussian_sampling = false;
+    use_better_connect = false;
+    use_bridge_sampling = true;
+    use_weighted_distance_metric = false;
+    sigma = 0.1f;
+    // sigma = 2 * this->delta;
+    // sigma = this->delta;
+    name = "BridgeSampling2delta";
 }
 
-YourPlanner::~YourPlanner()
-{
+YourPlanner::~YourPlanner() {
 }
 
 YourPlanner::Edge
-YourPlanner::addEdge(const Vertex& u, const Vertex& v, Tree& tree)
-{
-  Edge e = ::boost::add_edge(u, v, tree).first;
+YourPlanner::addEdge(const Vertex u, const Vertex v, Tree &tree) {
+    Edge e = ::boost::add_edge(u, v, tree).first;
 
-  if (NULL != this->viewer)
-  {
-    this->viewer->drawConfigurationEdge(*tree[u].q, *tree[v].q);
-  }
+    if (NULL != this->viewer) {
+        this->viewer->drawConfigurationEdge(*tree[u].q, *tree[v].q);
+    }
 
-  return e;
+    return e;
 }
+
 YourPlanner::Vertex
-YourPlanner::addVertex(Tree& tree, const ::rl::plan::VectorPtr& q)
-{
-  Vertex v = ::boost::add_vertex(tree);
-  tree[v].index = ::boost::num_vertices(tree) - 1;
-  tree[v].q = q;
+YourPlanner::addVertex(Tree &tree, const ::rl::plan::VectorPtr &q) {
+    Vertex v = ::boost::add_vertex(tree);
+    tree[v].index = ::boost::num_vertices(tree) - 1;
+    tree[v].q = q;
 
-  if (NULL != this->viewer)
-  {
-    this->viewer->drawConfigurationVertex(*tree[v].q);
-  }
+    if (NULL != this->viewer) {
+        this->viewer->drawConfigurationVertex(*tree[v].q);
+    }
 
-  return v;
+    return v;
 }
 
 bool
-YourPlanner::areEqual(const ::rl::math::Vector& lhs, const ::rl::math::Vector& rhs) const
-{
-  if (this->model->distance(lhs, rhs) > this->epsilon)
-  {
-    return false;
-  }
-  else
-  {
-    return true;
-  }
+YourPlanner::areEqual(const ::rl::math::Vector &lhs, const ::rl::math::Vector &rhs) const {
+    if (this->model->distance(lhs, rhs) > this->epsilon) {
+        return false;
+    } else {
+        return true;
+    }
 }
 
 void // TODO: OPTIMIZE
-YourPlanner::choose(::rl::math::Vector& chosen, const ::rl::math::Vector& goal)
-{
-  float goal_p = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-  if (goal_p < this->goal_bias && this->use_goal_bias)
-  {
-    chosen = goal;
-    return;
-  }
-  if (this->use_gaussian_sampling)
-  {
-    chosen = this->sampler->generateGaussian();
-  }
-  else if(this->use_bridge_sampling)
-  {
-    chosen = this->sampler->generateBridge();
-  }
-  else
-  {
-    chosen = this->sampler->generate();
-  }
+YourPlanner::choose(::rl::math::Vector &chosen, const ::rl::math::Vector &goal) {
+    float goal_p = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+    if (goal_p < this->goal_bias && this->use_goal_bias) {
+        chosen = goal;
+        return;
+    }
+    if (this->use_gaussian_sampling) {
+        chosen = this->sampler->generateGaussian();
+    } else if (this->use_bridge_sampling) {
+        chosen = this->sampler->generateBridge();
+    } else {
+        chosen = this->sampler->generate();
+    }
 }
 
 YourPlanner::Vertex
-YourPlanner::connect(Tree& tree, const Neighbor& nearest, const ::rl::math::Vector& chosen)
-{
-  //Do first extend step
+YourPlanner::connect(Tree &tree, const Neighbor &nearest, const ::rl::math::Vector &chosen) {
+    //Do first extend step
 
-  ::rl::math::Real distance = nearest.second;
-  ::rl::math::Real step = distance;
+    ::rl::math::Real distance = nearest.second;
+    ::rl::math::Real step = distance;
 
-  bool reached = false;
+    bool reached = false;
 
-  if (step <= this->delta)
-  {
-    reached = true;
-  }
-  else
-  {
-    step = this->delta;
-  }
-
-  ::rl::plan::VectorPtr lastQ = ::std::make_shared< ::rl::math::Vector >(this->model->getDof());
-
-  // move "last" along the line q<->chosen by distance "step / distance"
-  this->model->interpolate(*tree[nearest.first].q, chosen, step / distance, *lastQ);
-
-  this->model->setPosition(*lastQ);
-  this->model->updateFrames();
-
-  if (this->model->isColliding())
-  {
-    tree[nearest.first].fails += 1;
-    if (tree[nearest.first].fails > this->exhaustion_limit && this->use_neighbor_exhaustion){
-      tree[nearest.first].exhausted = true;
-    }
-    if (tree[nearest.first].fails > this->most_fails){
-      this->most_fails = tree[nearest.first].fails;
-      //std::cout << "Most fails: " << this->most_fails << std::endl;
-    }
-    return NULL;
-  }else{
-    tree[nearest.first].successes += 1;
-  }
-
-  //::rl::math::Vector nextQ(this->model->getDof());
-  ::rl::plan::VectorPtr nextQ = ::std::make_shared< ::rl::math::Vector >(this->model->getDof());
-
-  uint counter = 0;
-
-  Vertex lastVertex = nearest.first;
-
-  while (!reached)
-  {
-    //Do further extend step
-
-    distance = this->model->distance(*lastQ, chosen);
-    step = distance;
-
-    if (step <= this->delta)
-    {
-      reached = true;
-    }
-    else
-    {
-      step = this->delta;
+    if (step <= this->delta) {
+        reached = true;
+    } else {
+        step = this->delta;
     }
 
-    // move "next" along the line last<->chosen by distance "step / distance"
-    this->model->interpolate(*lastQ, chosen, step / distance, *nextQ);
+    ::rl::plan::VectorPtr lastQ = ::std::make_shared<::rl::math::Vector>(this->model->getDof());
 
-    this->model->setPosition(*nextQ);
+    // move "last" along the line q<->chosen by distance "step / distance"
+    this->model->interpolate(*tree[nearest.first].q, chosen, step / distance, *lastQ);
+
+    this->model->setPosition(*lastQ);
     this->model->updateFrames();
-
     if (this->model->isColliding())
     {
-      break;
+        return NULL;
     }
 
-    if (this->use_better_connect){
-      Vertex tmp = this->addVertex(tree, nextQ);
-      this->addEdge(lastVertex, tmp, tree);
-      lastVertex = tmp;
-    }
-    *lastQ = *nextQ;
-    counter += 1;
-  }
+    /*if (this->model->isColliding()) {
+        tree[nearest.first].fails += 1;
+        if (tree[nearest.first].fails > this->exhaustion_limit && this->use_neighbor_exhaustion) {
+            tree[nearest.first].exhausted = true;
+        }
+        if (tree[nearest.first].fails > this->most_fails) {
+            this->most_fails = tree[nearest.first].fails;
+            //std::cout << "Most fails: " << this->most_fails << std::endl;
+        }
+        return NULL;
+    } else {
+        tree[nearest.first].successes += 1;
+    }*/
 
-  // "last" now points to the vertex where the connect step collided with the environment.
-  // Add it to the tree
-  Vertex connected = this->addVertex(tree, lastQ);
-  this->addEdge(lastVertex, connected, tree);
-  return connected;
+    //::rl::math::Vector nextQ(this->model->getDof());
+    ::rl::plan::VectorPtr nextQ = ::std::make_shared<::rl::math::Vector>(this->model->getDof());
+
+    uint counter = 0;
+
+    Vertex lastVertex = nearest.first;
+
+    while (!reached) {
+        //Do further extend step
+
+        distance = this->model->distance(*lastQ, chosen);
+        step = distance;
+
+        if (step <= this->delta) {
+            reached = true;
+        } else {
+            step = this->delta;
+        }
+
+        // move "next" along the line last<->chosen by distance "step / distance"
+        this->model->interpolate(*lastQ, chosen, step / distance, *nextQ);
+
+        this->model->setPosition(*nextQ);
+        this->model->updateFrames();
+
+        if (this->model->isColliding()) {
+            break;
+        }
+
+        if (this->use_better_connect) {
+            Vertex tmp = this->addVertex(tree, nextQ);
+            this->addEdge(lastVertex, tmp, tree);
+            lastVertex = tmp;
+        }
+        *lastQ = *nextQ;
+        counter += 1;
+    }
+
+    // "last" now points to the vertex where the connect step collided with the environment.
+    // Add it to the tree
+    Vertex connected = this->addVertex(tree, lastQ);
+    this->addEdge(lastVertex, connected, tree);
+    return connected;
 }
 
 YourPlanner::Vertex
-YourPlanner::extend(Tree& tree, const Neighbor& nearest, const ::rl::math::Vector& chosen)
-{
-  ::rl::math::Real distance = nearest.second;
-  ::rl::math::Real step = (::std::min)(distance, this->delta);
+YourPlanner::extend(Tree &tree, const Neighbor &nearest, const ::rl::math::Vector &chosen) {
+    ::rl::math::Real distance = nearest.second;
+    ::rl::math::Real step = (::std::min)(distance, this->delta);
 
-  ::rl::plan::VectorPtr next = ::std::make_shared< ::rl::math::Vector >(this->model->getDof());
+    ::rl::plan::VectorPtr next = ::std::make_shared<::rl::math::Vector>(this->model->getDof());
 
-  this->model->interpolate(*tree[nearest.first].q, chosen, step / distance, *next);
+    this->model->interpolate(*tree[nearest.first].q, chosen, step / distance, *next);
 
-  this->model->setPosition(*next);
-  this->model->updateFrames();
+    this->model->setPosition(*next);
+    this->model->updateFrames();
 
-  if (!this->model->isColliding())
-  {
-    Vertex extended = this->addVertex(tree, next);
-    this->addEdge(nearest.first, extended, tree);
-    return extended;
-  }
+    if (!this->model->isColliding()) {
+        Vertex extended = this->addVertex(tree, next);
+        this->addEdge(nearest.first, extended, tree);
+        return extended;
+    }
 
-  return NULL;
+    return NULL;
 }
 
 ::std::string
-YourPlanner::getName() const
-{
-  return this->name;
+YourPlanner::getName() const {
+    return this->name;
 }
 
 ::std::size_t
-YourPlanner::getNumEdges() const
-{
-  ::std::size_t edges = 0;
+YourPlanner::getNumEdges() const {
+    ::std::size_t edges = 0;
 
-  for (::std::size_t i = 0; i < this->tree.size(); ++i)
-  {
-    edges += ::boost::num_edges(this->tree[i]);
-  }
+    for (::std::size_t i = 0; i < this->tree.size(); ++i) {
+        edges += ::boost::num_edges(this->tree[i]);
+    }
 
-  return edges;
+    return edges;
 }
 
 ::std::size_t
-YourPlanner::getNumVertices() const
-{
-  ::std::size_t vertices = 0;
+YourPlanner::getNumVertices() const {
+    ::std::size_t vertices = 0;
 
-  for (::std::size_t i = 0; i < this->tree.size(); ++i)
-  {
-    vertices += ::boost::num_vertices(this->tree[i]);
-  }
+    for (::std::size_t i = 0; i < this->tree.size(); ++i) {
+        vertices += ::boost::num_vertices(this->tree[i]);
+    }
 
-  return vertices;
+    return vertices;
 }
 
 rl::plan::VectorList
-YourPlanner::getPath()
-{
+YourPlanner::getPath() {
 
-  rl::plan::VectorList path;
-  Vertex i = this->end[0];
+    rl::plan::VectorList path;
+    Vertex i = this->end[0];
 
-  while (i != this->begin[0])
-  {
+    while (i != this->begin[0]) {
+        path.push_front(*this->tree[0][i].q);
+        i = ::boost::source(*::boost::in_edges(i, this->tree[0]).first, this->tree[0]);
+    }
+
     path.push_front(*this->tree[0][i].q);
-    i = ::boost::source(*::boost::in_edges(i, this->tree[0]).first, this->tree[0]);
-  }
 
-  path.push_front(*this->tree[0][i].q);
+    i = ::boost::source(*::boost::in_edges(this->end[1], this->tree[1]).first, this->tree[1]);
 
-  i = ::boost::source(*::boost::in_edges(this->end[1], this->tree[1]).first, this->tree[1]);
+    while (i != this->begin[1]) {
+        path.push_back(*this->tree[1][i].q);
+        i = ::boost::source(*::boost::in_edges(i, this->tree[1]).first, this->tree[1]);
+    }
 
-  while (i != this->begin[1])
-  {
     path.push_back(*this->tree[1][i].q);
-    i = ::boost::source(*::boost::in_edges(i, this->tree[1]).first, this->tree[1]);
-  }
 
-  path.push_back(*this->tree[1][i].q);
-
-  return path;
+    return path;
 }
 
 rl::math::Real // TODO: OPTIMIZE
-YourPlanner::compute_distance(const ::rl::math::Vector& q1, const ::rl::math::Vector& q2)
-{
-  return this->model->transformedDistance(q1, q2);
+YourPlanner::compute_distance(const ::rl::math::Vector &q1, const ::rl::math::Vector &q2) {
+    if (this->use_weighted_distance_metric) {
+        // Define the weights for each dimension
+        ::rl::math::Vector weights(this->model->getDof());
+        weights << 1.0, 1.0, 2.0, 1.5, 1.0, 2.5; // Modify this line to set your own weights
+
+        ::rl::math::Real distance = 0.0;
+
+        for (::std::size_t i = 0; i < this->model->getDof(); ++i) {
+            ::rl::math::Real diff = q1(i) - q2(i);
+            distance += weights(i) * diff * diff;
+        }
+        return distance;
+    }
+    return this->model->transformedDistance(q1, q2);
 }
 
 YourPlanner::Neighbor // TODO: OPTIMIZE
-YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
-{
-  //create an empty pair <Vertex, distance> to return
-  Neighbor p(Vertex(), (::std::numeric_limits< ::rl::math::Real >::max)());
+YourPlanner::nearest(const Tree &tree, const ::rl::math::Vector &chosen) {
+    //create an empty pair <Vertex, distance> to return
+    Neighbor p(Vertex(), (::std::numeric_limits<::rl::math::Real>::max)());
 
-  //Iterate through all vertices to find the nearest neighbour
-  for (VertexIteratorPair i = ::boost::vertices(tree); i.first != i.second; ++i.first)
-  {
-    if (tree[*i.first].exhausted) continue;
-    ::rl::math::Real d = this->compute_distance(chosen, *tree[*i.first].q);
+    //Iterate through all vertices to find the nearest neighbour
+    for (VertexIteratorPair i = ::boost::vertices(tree); i.first != i.second; ++i.first) {
+        if (tree[*i.first].exhausted) continue;
+        ::rl::math::Real d = this->compute_distance(chosen, *tree[*i.first].q);
 
-    if (d < p.second)
-    {
-      p.first = *i.first;
-      p.second = d;
+        if (d < p.second) {
+            p.first = *i.first;
+            p.second = d;
+        }
     }
-  }
 
 
-  // Compute the square root of distance
-  p.second = this->model->inverseOfTransformedDistance(p.second);
+    // Compute the square root of distance
+    p.second = this->model->inverseOfTransformedDistance(p.second);
 
-  return p;
+    return p;
 }
 
 void
-YourPlanner::reset()
-{
-  for (::std::size_t i = 0; i < this->tree.size(); ++i)
-  {
-    this->tree[i].clear();
-    this->begin[i] = NULL;
-    this->end[i] = NULL;
-  }
+YourPlanner::reset() {
+    for (::std::size_t i = 0; i < this->tree.size(); ++i) {
+        this->tree[i].clear();
+        this->begin[i] = NULL;
+        this->end[i] = NULL;
+    }
 }
 
 bool // TODO: OPTIMIZE
-YourPlanner::solve()
-{
-  this->sampler->setSigma(this->sigma);
-  this->time = ::std::chrono::steady_clock::now();
-  // Define the roots of both trees
-  this->begin[0] = this->addVertex(this->tree[0], ::std::make_shared< ::rl::math::Vector >(*this->start));
-  this->begin[1] = this->addVertex(this->tree[1], ::std::make_shared< ::rl::math::Vector >(*this->goal));
+YourPlanner::solve() {
+    this->sampler->setSigma(this->sigma);
+    this->time = ::std::chrono::steady_clock::now();
+    // Define the roots of both trees
+    this->begin[0] = this->addVertex(this->tree[0], ::std::make_shared<::rl::math::Vector>(*this->start));
+    this->begin[1] = this->addVertex(this->tree[1], ::std::make_shared<::rl::math::Vector>(*this->goal));
 
-  Tree* a = &this->tree[0];
-  Tree* b = &this->tree[1];
+    Tree *a = &this->tree[0];
+    Tree *b = &this->tree[1];
 
-  ::rl::math::Vector chosen(this->model->getDof());
+    ::rl::math::Vector chosen(this->model->getDof());
 
 
-  while ((::std::chrono::steady_clock::now() - this->time) < this->duration)
-  {
-    //First grow tree a and then try to connect b.
-    //then swap roles: first grow tree b and connect to a.
-    for (::std::size_t j = 0; j < 2; ++j)
-    {
-      //Sample a random configuration
-      
-      this->choose(chosen, &this->tree[0] == a ? *this->goal : *this->start);
+    while ((::std::chrono::steady_clock::now() - this->time) < this->duration) {
+        //First grow tree a and then try to connect b.
+        //then swap roles: first grow tree b and connect to a.
+        for (::std::size_t j = 0; j < 2; ++j) {
+            //Sample a random configuration
 
-      //Find the nearest neighbour in the tree
-      Neighbor aNearest = this->nearest(*a, chosen);
+            this->choose(chosen, &this->tree[0] == a ? *this->goal : *this->start);
 
-      //Do a CONNECT step from the nearest neighbour to the sample
-      Vertex aConnected = this->connect(*a, aNearest, chosen);
+            //Find the nearest neighbour in the tree
+            Neighbor aNearest = this->nearest(*a, chosen);
 
-      //If a new node was inserted tree a
-      if (NULL != aConnected)
-      {
-        // Try a CONNECT step form the other tree to the sample
-        Neighbor bNearest = this->nearest(*b, *(*a)[aConnected].q);
-        Vertex bConnected = this->connect(*b, bNearest, *(*a)[aConnected].q);
+            //Do a CONNECT step from the nearest neighbour to the sample
+            Vertex aConnected = this->connect(*a, aNearest, chosen);
 
-        if (NULL != bConnected)
-        {
-          //Test if we could connect both trees with each other
-          if (this->areEqual(*(*a)[aConnected].q, *(*b)[bConnected].q))
-          {
-            this->end[0] = &this->tree[0] == a ? aConnected : bConnected;
-            this->end[1] = &this->tree[1] == b ? bConnected : aConnected;
-            return true;
-          }
+            //If a new node was inserted tree a
+            if (NULL != aConnected) {
+                // Try a CONNECT step form the other tree to the sample
+                Neighbor bNearest = this->nearest(*b, *(*a)[aConnected].q);
+                Vertex bConnected = this->connect(*b, bNearest, *(*a)[aConnected].q);
+
+                if (NULL != bConnected) {
+                    //Test if we could connect both trees with each other
+                    if (this->areEqual(*(*a)[aConnected].q, *(*b)[bConnected].q)) {
+                        this->end[0] = &this->tree[0] == a ? aConnected : bConnected;
+                        this->end[1] = &this->tree[1] == b ? bConnected : aConnected;
+                        return true;
+                    }
+                }
+            }
+
+            //Swap the roles of a and b
+            using ::std::swap;
+            swap(a, b);
         }
-      }
 
-      //Swap the roles of a and b
-      using ::std::swap;
-      swap(a, b);
     }
-
-  }
-  return false;
+    return false;
 }
