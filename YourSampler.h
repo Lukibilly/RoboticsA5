@@ -1,7 +1,6 @@
 #ifndef _YOURSAMPLER_H_
 #define _YOURSAMPLER_H_
 
-
 #include <rl/plan/Sampler.h>
 #include <random>
 
@@ -22,28 +21,25 @@ namespace rl
             ::rl::math::Vector generate();
             ::rl::math::Vector generateGaussian();
             ::rl::math::Vector generateBridge();
-            ::rl::math::Vector generateGaussianAlongCPath(const Eigen::MatrixXd& Q, const double lengthAB);
-
-
-            virtual void seed(const ::std::mt19937::result_type& value);
+            ::rl::math::Vector generateGaussianAlongCPath(const Eigen::MatrixXd &Q, const double lengthAB);
+            ::rl::math::Vector generateGaussianAlongCPath_Improved(const Eigen::MatrixXd &Q, const double lengthAB, ::std::vector<double> furthestDistanceFromOrigin);
+            virtual void seed(const ::std::mt19937::result_type &value);
             void setSigma(const ::rl::math::Real delta);
-            
+
             ::rl::math::Vector sigma;
 
         protected:
-            ::std::uniform_real_distribution< ::rl::math::Real>::result_type rand();
-            ::std::normal_distribution< ::rl::math::Real>::result_type gauss();
+            ::std::uniform_real_distribution<::rl::math::Real>::result_type rand();
+            ::std::normal_distribution<::rl::math::Real>::result_type gauss();
 
-            ::std::uniform_real_distribution< ::rl::math::Real> randDistribution;
-            ::std::normal_distribution< ::rl::math::Real> normalDistribution;
+            ::std::uniform_real_distribution<::rl::math::Real> randDistribution;
+            ::std::normal_distribution<::rl::math::Real> normalDistribution;
 
             ::std::mt19937 randEngine;
 
         private:
-
         };
     }
 }
-
 
 #endif // _YOURSAMPLER_H_

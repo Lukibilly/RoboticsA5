@@ -7,14 +7,14 @@
 #include <iostream>
 #include <Eigen/Dense>
 
-YourPlanner::YourPlanner() :
-  Planner(),
-  delta(1.0f),
-  epsilon(1.0e-3f),
-  sampler(NULL),
-  begin(2),
-  end(2),
-  tree(2)
+YourPlanner::YourPlanner() : Planner(),
+                             delta(1.0f),
+                             epsilon(1.0e-3f),
+                             sampler(NULL),
+                             begin(2),
+                             end(2),
+                             tree(2),
+                             furthestDistanceFromOrigin(2)
 {
   use_goal_bias = false;
   goal_bias = 0.1;
@@ -24,18 +24,17 @@ YourPlanner::YourPlanner() :
   use_better_connect = false;
   use_bridge_sampling = false;
   use_gaussian_along_c_path = true;
-  sigma = 2*this->delta;
+  use_gaussian_along_direction = true;
+  sigma = 2 * this->delta;
   name = "BridgeSampling2delta";
-  //Q = Eigen::MatrixXd(this->model->getDof(),this->model->getDof());
 }
 
 YourPlanner::~YourPlanner()
 {
-
 }
 
 YourPlanner::Edge
-YourPlanner::addEdge(const Vertex& u, const Vertex& v, Tree& tree)
+YourPlanner::addEdge(const Vertex &u, const Vertex &v, Tree &tree)
 {
   Edge e = ::boost::add_edge(u, v, tree).first;
 
@@ -46,9 +45,40 @@ YourPlanner::addEdge(const Vertex& u, const Vertex& v, Tree& tree)
 
   return e;
 }
-YourPlanner::Vertex
-YourPlanner::addVertex(Tree& tree, const ::rl::plan::VectorPtr& q)
+
+//project vector a on vector b
+Eigen::VectorXd project(const ::rl::math::Vector &a, const ::rl::math::Vector &b)
 {
+  double scale = b.dot(a) / b.dot(b);
+  return b * scale;
+}
+
+YourPlanner::Vertex
+YourPlanner::addVertex(Tree &tree, const ::rl::plan::VectorPtr &q)
+{
+  // when a vertex gets added calculate its distance from the origin if projected along the start->goal vector
+  if (this->use_gaussian_along_direction)
+  {
+    
+    Eigen::VectorXd projection = project(*q, this->start_to_goal);
+    float length_of_projection = projection.norm();
+
+    int tree_version = -1;
+    if (&this->tree[0] == &tree)
+    {
+      tree_version = 0;
+    }
+    else
+    {
+      tree_version = 1;
+    }
+
+    if (furthestDistanceFromOrigin[tree_version] < length_of_projection)
+    {
+      furthestDistanceFromOrigin[tree_version] = length_of_projection;
+    }
+  }
+
   Vertex v = ::boost::add_vertex(tree);
   tree[v].index = ::boost::num_vertices(tree) - 1;
   tree[v].q = q;
@@ -61,8 +91,7 @@ YourPlanner::addVertex(Tree& tree, const ::rl::plan::VectorPtr& q)
   return v;
 }
 
-bool
-YourPlanner::areEqual(const ::rl::math::Vector& lhs, const ::rl::math::Vector& rhs) const
+bool YourPlanner::areEqual(const ::rl::math::Vector &lhs, const ::rl::math::Vector &rhs) const
 {
   if (this->model->distance(lhs, rhs) > this->epsilon)
   {
@@ -75,7 +104,7 @@ YourPlanner::areEqual(const ::rl::math::Vector& lhs, const ::rl::math::Vector& r
 }
 
 void // TODO: OPTIMIZE
-YourPlanner::choose(::rl::math::Vector& chosen, const ::rl::math::Vector& goal)
+YourPlanner::choose(::rl::math::Vector &chosen, const ::rl::math::Vector &goal)
 {
   float goal_p = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
   if (goal_p < this->goal_bias && this->use_goal_bias)
@@ -87,13 +116,22 @@ YourPlanner::choose(::rl::math::Vector& chosen, const ::rl::math::Vector& goal)
   {
     chosen = this->sampler->generateGaussian();
   }
-  else if(this->use_bridge_sampling)
+  else if (this->use_bridge_sampling)
   {
     chosen = this->sampler->generateBridge();
   }
-  else if(this->use_gaussian_along_c_path)
+  else if (this->use_gaussian_along_c_path)
   {
-    chosen = this->sampler->generateGaussianAlongCPath(this->Q, this->lengthStartGoal);
+    // if we also additionally want to sample with two gaussians along the start->goal direction
+    if (this->use_gaussian_along_direction)
+    {
+      chosen = this->sampler->generateGaussianAlongCPath_Improved(this->Q, this->lengthStartGoal, this->furthestDistanceFromOrigin);
+    }
+    // if we want our "regular" gaussian along start->goal direction
+    else
+    {
+      chosen = this->sampler->generateGaussianAlongCPath(this->Q, this->lengthStartGoal);
+    }
   }
   else
   {
@@ -101,13 +139,10 @@ YourPlanner::choose(::rl::math::Vector& chosen, const ::rl::math::Vector& goal)
   }
 }
 
-
-
-
 YourPlanner::Vertex
-YourPlanner::connect(Tree& tree, const Neighbor& nearest, const ::rl::math::Vector& chosen)
+YourPlanner::connect(Tree &tree, const Neighbor &nearest, const ::rl::math::Vector &chosen)
 {
-  //Do first extend step
+  // Do first extend step
 
   ::rl::math::Real distance = nearest.second;
   ::rl::math::Real step = distance;
@@ -123,7 +158,7 @@ YourPlanner::connect(Tree& tree, const Neighbor& nearest, const ::rl::math::Vect
     step = this->delta;
   }
 
-  ::rl::plan::VectorPtr lastQ = ::std::make_shared< ::rl::math::Vector >(this->model->getDof());
+  ::rl::plan::VectorPtr lastQ = ::std::make_shared<::rl::math::Vector>(this->model->getDof());
 
   // move "last" along the line q<->chosen by distance "step / distance"
   this->model->interpolate(*tree[nearest.first].q, chosen, step / distance, *lastQ);
@@ -134,20 +169,24 @@ YourPlanner::connect(Tree& tree, const Neighbor& nearest, const ::rl::math::Vect
   if (this->model->isColliding())
   {
     tree[nearest.first].fails += 1;
-    if (tree[nearest.first].fails > this->exhaustion_limit && this->use_neighbor_exhaustion){
+    if (tree[nearest.first].fails > this->exhaustion_limit && this->use_neighbor_exhaustion)
+    {
       tree[nearest.first].exhausted = true;
     }
-    if (tree[nearest.first].fails > this->most_fails){
+    if (tree[nearest.first].fails > this->most_fails)
+    {
       this->most_fails = tree[nearest.first].fails;
-      //std::cout << "Most fails: " << this->most_fails << std::endl;
+      // std::cout << "Most fails: " << this->most_fails << std::endl;
     }
     return NULL;
-  }else{
+  }
+  else
+  {
     tree[nearest.first].successes += 1;
   }
 
   //::rl::math::Vector nextQ(this->model->getDof());
-  ::rl::plan::VectorPtr nextQ = ::std::make_shared< ::rl::math::Vector >(this->model->getDof());
+  ::rl::plan::VectorPtr nextQ = ::std::make_shared<::rl::math::Vector>(this->model->getDof());
 
   uint counter = 0;
 
@@ -155,7 +194,7 @@ YourPlanner::connect(Tree& tree, const Neighbor& nearest, const ::rl::math::Vect
 
   while (!reached)
   {
-    //Do further extend step
+    // Do further extend step
 
     distance = this->model->distance(*lastQ, chosen);
     step = distance;
@@ -180,7 +219,8 @@ YourPlanner::connect(Tree& tree, const Neighbor& nearest, const ::rl::math::Vect
       break;
     }
 
-    if (this->use_better_connect){
+    if (this->use_better_connect)
+    {
       Vertex tmp = this->addVertex(tree, nextQ);
       this->addEdge(lastVertex, tmp, tree);
       lastVertex = tmp;
@@ -197,12 +237,13 @@ YourPlanner::connect(Tree& tree, const Neighbor& nearest, const ::rl::math::Vect
 }
 
 Eigen::MatrixXd
-YourPlanner::generateOrthonormalBasis(const Eigen::VectorXd& v)
+YourPlanner::generateOrthonormalBasis(const Eigen::VectorXd &v)
 {
-  
+
   int dim = this->model->getDof();
 
-  if(dim != v.size()){
+  if (dim != v.size())
+  {
     std::cout << "DOF does not match vector size" << std::endl;
   }
 
@@ -212,16 +253,17 @@ YourPlanner::generateOrthonormalBasis(const Eigen::VectorXd& v)
 
   // Generate additional vectors to fill the basis.
   // Start from 1 because the first vector is already set.
-  for (int i = 1; i < dim; ++i) {
+  for (int i = 1; i < dim; ++i)
+  {
 
-      Eigen::VectorXd vec = Eigen::VectorXd::Zero(dim); // Initialize a vector of zeros.
+    Eigen::VectorXd vec = Eigen::VectorXd::Zero(dim); // Initialize a vector of zeros.
 
-      vec(i) = 1; // Set one element to 1 to create a simple basis vector. This is a naive way to fill the space.
-      
-      // The generated vector is added as a column to the matrix. 
-      // This process is not guaranteed to produce
-      // orthogonal vectors yet; QR decomposition will handle orthogonality and normalization later.
-      mat.col(i) = vec;
+    vec(i) = 1; // Set one element to 1 to create a simple basis vector. This is a naive way to fill the space.
+
+    // The generated vector is added as a column to the matrix.
+    // This process is not guaranteed to produce
+    // orthogonal vectors yet; QR decomposition will handle orthogonality and normalization later.
+    mat.col(i) = vec;
   }
 
   // Perform QR decomposition on the matrix with the initial vectors.
@@ -234,7 +276,8 @@ YourPlanner::generateOrthonormalBasis(const Eigen::VectorXd& v)
   // Return the Q matrix, which now contains an orthonormal basis for the space.
   // The first vector is the normalized input vector, and the rest are orthogonal to it and each other.
 
-  std::cout << "Orthonormal basis:\n" << Q << std::endl;
+  std::cout << "Orthonormal basis:\n"
+            << Q << std::endl;
 
   /*
   for (int i = 1; i < dim; ++i) {
@@ -242,18 +285,17 @@ YourPlanner::generateOrthonormalBasis(const Eigen::VectorXd& v)
     std::cout << "Diff from perfect orthogonality:" << i << "="<< diff << std::endl;
   }
   */
-  
+
   return Q;
 }
 
-
 YourPlanner::Vertex
-YourPlanner::extend(Tree& tree, const Neighbor& nearest, const ::rl::math::Vector& chosen)
+YourPlanner::extend(Tree &tree, const Neighbor &nearest, const ::rl::math::Vector &chosen)
 {
   ::rl::math::Real distance = nearest.second;
   ::rl::math::Real step = (::std::min)(distance, this->delta);
 
-  ::rl::plan::VectorPtr next = ::std::make_shared< ::rl::math::Vector >(this->model->getDof());
+  ::rl::plan::VectorPtr next = ::std::make_shared<::rl::math::Vector>(this->model->getDof());
 
   this->model->interpolate(*tree[nearest.first].q, chosen, step / distance, *next);
 
@@ -331,23 +373,24 @@ YourPlanner::getPath()
 }
 
 rl::math::Real // TODO: OPTIMIZE
-YourPlanner::compute_distance(const ::rl::math::Vector& q1, const ::rl::math::Vector& q2)
+YourPlanner::compute_distance(const ::rl::math::Vector &q1, const ::rl::math::Vector &q2)
 {
   return this->model->transformedDistance(q1, q2);
 }
 
 YourPlanner::Neighbor // TODO: OPTIMIZE
-YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
+YourPlanner::nearest(const Tree &tree, const ::rl::math::Vector &chosen)
 {
-  //create an empty pair <Vertex, distance> to return
-  Neighbor p(Vertex(), (::std::numeric_limits< ::rl::math::Real >::max)());
+  // create an empty pair <Vertex, distance> to return
+  Neighbor p(Vertex(), (::std::numeric_limits<::rl::math::Real>::max)());
 
-  //Iterate through all vertices to find the nearest neighbour
+  // Iterate through all vertices to find the nearest neighbour
   for (VertexIteratorPair i = ::boost::vertices(tree); i.first != i.second; ++i.first)
   {
-    //TODO: maybe only make them less likely?
-    //ignore exhausted nodes
-    if (tree[*i.first].exhausted) continue;
+    // TODO: maybe only make them less likely?
+    // ignore exhausted nodes
+    if (tree[*i.first].exhausted)
+      continue;
 
     ::rl::math::Real d = this->compute_distance(chosen, *tree[*i.first].q);
 
@@ -358,15 +401,13 @@ YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
     }
   }
 
-
   // Compute the square root of distance
   p.second = this->model->inverseOfTransformedDistance(p.second);
 
   return p;
 }
 
-void
-YourPlanner::reset()
+void YourPlanner::reset()
 {
   for (::std::size_t i = 0; i < this->tree.size(); ++i)
   {
@@ -381,42 +422,47 @@ YourPlanner::solve()
 {
   this->sampler->setSigma(this->sigma);
   this->time = ::std::chrono::steady_clock::now();
+
+  // calculate direction in c-space from start to goal
+  this->start_to_goal = (*this->goal) - (*this->start);
+
+  // calculate length between start and goal
+  this->lengthStartGoal = start_to_goal.norm();
+
+  // calculate orthonormal basis including the first direction as the 0th entry
+  this->Q = YourPlanner::generateOrthonormalBasis(this->start_to_goal);
+
   // Define the roots of both trees
-  this->begin[0] = this->addVertex(this->tree[0], ::std::make_shared< ::rl::math::Vector >(*this->start));
-  this->begin[1] = this->addVertex(this->tree[1], ::std::make_shared< ::rl::math::Vector >(*this->goal));
+  this->begin[0] = this->addVertex(this->tree[0], ::std::make_shared<::rl::math::Vector>(*this->start));
+  this->begin[1] = this->addVertex(this->tree[1], ::std::make_shared<::rl::math::Vector>(*this->goal));
 
+  // these keep the furthest distance any node has from the origin of its respective tree
+  // they decice, where the most of the first values are drawn
+  // TODO check good starting values for these, 
+  furthestDistanceFromOrigin[0] = 0.1*this->lengthStartGoal;
+  furthestDistanceFromOrigin[1] = 0.1*this->lengthStartGoal;
 
-
-  Tree* a = &this->tree[0];
-  Tree* b = &this->tree[1];
+  Tree *a = &this->tree[0];
+  Tree *b = &this->tree[1];
 
   ::rl::math::Vector chosen(this->model->getDof());
 
-  //calculate direction in c-space from start to goal
-  Eigen::VectorXd start_to_goal = (*this->goal) - (*this->start);
-
-  //calculate length between start and goal
-  this->lengthStartGoal = start_to_goal.norm();
-
-  //calculate orthonormal basis including the first direction as the 0th entry
-  this->Q = YourPlanner::generateOrthonormalBasis(start_to_goal);
-
   while ((::std::chrono::steady_clock::now() - this->time) < this->duration)
   {
-    //First grow tree a and then try to connect b.
-    //then swap roles: first grow tree b and connect to a.
+    // First grow tree a and then try to connect b.
+    // then swap roles: first grow tree b and connect to a.
     for (::std::size_t j = 0; j < 2; ++j)
     {
-      //Sample a random configuration
+      // Sample a random configuration
       this->choose(chosen, &this->tree[0] == a ? *this->goal : *this->start);
 
-      //Find the nearest neighbour in the tree
+      // Find the nearest neighbour in the tree
       Neighbor aNearest = this->nearest(*a, chosen);
 
-      //Do a CONNECT step from the nearest neighbour to the sample
+      // Do a CONNECT step from the nearest neighbour to the sample
       Vertex aConnected = this->connect(*a, aNearest, chosen);
 
-      //If a new node was inserted tree a
+      // If a new node was inserted tree a
       if (NULL != aConnected)
       {
         // Try a CONNECT step form the other tree to the sample
@@ -425,7 +471,7 @@ YourPlanner::solve()
 
         if (NULL != bConnected)
         {
-          //Test if we could connect both trees with each other
+          // Test if we could connect both trees with each other
           if (this->areEqual(*(*a)[aConnected].q, *(*b)[bConnected].q))
           {
             this->end[0] = &this->tree[0] == a ? aConnected : bConnected;
@@ -435,11 +481,10 @@ YourPlanner::solve()
         }
       }
 
-      //Swap the roles of a and b
+      // Swap the roles of a and b
       using ::std::swap;
       swap(a, b);
     }
-
   }
   return false;
 }
