@@ -62,11 +62,13 @@ public:
   bool use_bridge_sampling = false;
   bool use_better_connect = false;
   bool use_weighted_distance_metric = false;
+  bool use_gaussian_along_c_path = false;
   int exhaustion_limit = 50;
   float goal_bias = 0.05;
   ::rl::math::Real sigma = 0.1;
   ::std::string name = "Test";//"GoalProbability" + ::std::to_string(goal_bias);
-
+  Eigen::MatrixXd Q;
+  double lengthStartGoal;
 
 protected:
   /////////////////////////////////////////////////////////////////////////
@@ -147,6 +149,9 @@ protected:
 
   /** Returns the nearest neighbour of chosen in tree*/
   virtual Neighbor nearest(const Tree& tree, const ::rl::math::Vector& chosen);
+
+  /**generates and orthonormal basis based on a given vector that will be included (in normalized form) in said basis*/
+  Eigen::MatrixXd generateOrthonormalBasis(const Eigen::VectorXd& v);
 
   ////////////////////////////////////////////////////////////////////////
   // members /////////////////////////////////////////////////////////////

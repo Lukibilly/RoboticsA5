@@ -114,6 +114,31 @@ namespace rl
             return sampleq;
         }
 
+        ::rl::math::Vector
+        YourSampler::generateGaussianAlongCPath(const Eigen::MatrixXd& Q, const double lengthStartGoal)
+        {
+            // Q.col(0) is the direction vector from "start" to "goal"
+            // we multiply this by a random length in [0, length(start->goal)]
+            ::rl::math::Vector sampleq = Q.col(0) * (this->rand() * lengthStartGoal); // Initial point along A-B
+
+            for (int i = 1; i < Q.cols(); ++i)
+            {
+                double gaussianSample = this->gauss(); // Gaussian sample for direction
+
+                //TODO add variance
+
+                sampleq += Q.col(i) * gaussianSample; // Adjust position in each basis direction
+            }
+
+            this->model->clip(sampleq); // Ensure within model limits
+            this->model->setPosition(sampleq);
+            this->model->updateFrames();
+
+
+            return sampleq;
+        }
+
+
         ::std::uniform_real_distribution< ::rl::math::Real>::result_type
         YourSampler::rand()
         {

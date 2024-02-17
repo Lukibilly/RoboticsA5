@@ -5,6 +5,7 @@
 #include <rl/plan/Viewer.h>
 #include <boost/make_shared.hpp>
 #include <iostream>
+#include <Eigen/Dense>
 
 YourPlanner::YourPlanner() :
   Planner(),
@@ -21,13 +22,16 @@ YourPlanner::YourPlanner() :
   exhaustion_limit = 100;
   use_gaussian_sampling = false;
   use_better_connect = false;
-  use_bridge_sampling = true;
+  use_bridge_sampling = false;
+  use_gaussian_along_c_path = true;
   sigma = 2*this->delta;
   name = "BridgeSampling2delta";
+  //Q = Eigen::MatrixXd(this->model->getDof(),this->model->getDof());
 }
 
 YourPlanner::~YourPlanner()
 {
+
 }
 
 YourPlanner::Edge
@@ -87,11 +91,18 @@ YourPlanner::choose(::rl::math::Vector& chosen, const ::rl::math::Vector& goal)
   {
     chosen = this->sampler->generateBridge();
   }
+  else if(this->use_gaussian_along_c_path)
+  {
+    chosen = this->sampler->generateGaussianAlongCPath(this->Q, this->lengthStartGoal);
+  }
   else
   {
     chosen = this->sampler->generate();
   }
 }
+
+
+
 
 YourPlanner::Vertex
 YourPlanner::connect(Tree& tree, const Neighbor& nearest, const ::rl::math::Vector& chosen)
@@ -184,6 +195,57 @@ YourPlanner::connect(Tree& tree, const Neighbor& nearest, const ::rl::math::Vect
   this->addEdge(lastVertex, connected, tree);
   return connected;
 }
+
+Eigen::MatrixXd
+YourPlanner::generateOrthonormalBasis(const Eigen::VectorXd& v)
+{
+  
+  int dim = this->model->getDof();
+
+  if(dim != v.size()){
+    std::cout << "DOF does not match vector size" << std::endl;
+  }
+
+  // Initialize a matrix to store vectors that will form the basis. The matrix has 'dim' rows and 'dim' columns.
+  Eigen::MatrixXd mat(dim, dim);
+  mat.col(0) = v.normalized();
+
+  // Generate additional vectors to fill the basis.
+  // Start from 1 because the first vector is already set.
+  for (int i = 1; i < dim; ++i) {
+
+      Eigen::VectorXd vec = Eigen::VectorXd::Zero(dim); // Initialize a vector of zeros.
+
+      vec(i) = 1; // Set one element to 1 to create a simple basis vector. This is a naive way to fill the space.
+      
+      // The generated vector is added as a column to the matrix. 
+      // This process is not guaranteed to produce
+      // orthogonal vectors yet; QR decomposition will handle orthogonality and normalization later.
+      mat.col(i) = vec;
+  }
+
+  // Perform QR decomposition on the matrix with the initial vectors.
+  // QR decomposition is a method to decompose a matrix into an orthogonal matrix (Q) and an upper triangular matrix (R).
+  Eigen::HouseholderQR<Eigen::MatrixXd> qr = mat.householderQr();
+
+  // Extract the Q matrix from the QR decomposition. Q is an orthonormal matrix where columns are the orthonormal basis vectors.
+  Eigen::MatrixXd Q = qr.householderQ();
+
+  // Return the Q matrix, which now contains an orthonormal basis for the space.
+  // The first vector is the normalized input vector, and the rest are orthogonal to it and each other.
+
+  std::cout << "Orthonormal basis:\n" << Q << std::endl;
+
+  /*
+  for (int i = 1; i < dim; ++i) {
+    float diff = Q.col(i-1).dot(Q.col(i));
+    std::cout << "Diff from perfect orthogonality:" << i << "="<< diff << std::endl;
+  }
+  */
+  
+  return Q;
+}
+
 
 YourPlanner::Vertex
 YourPlanner::extend(Tree& tree, const Neighbor& nearest, const ::rl::math::Vector& chosen)
@@ -283,7 +345,10 @@ YourPlanner::nearest(const Tree& tree, const ::rl::math::Vector& chosen)
   //Iterate through all vertices to find the nearest neighbour
   for (VertexIteratorPair i = ::boost::vertices(tree); i.first != i.second; ++i.first)
   {
+    //TODO: maybe only make them less likely?
+    //ignore exhausted nodes
     if (tree[*i.first].exhausted) continue;
+
     ::rl::math::Real d = this->compute_distance(chosen, *tree[*i.first].q);
 
     if (d < p.second)
@@ -320,11 +385,21 @@ YourPlanner::solve()
   this->begin[0] = this->addVertex(this->tree[0], ::std::make_shared< ::rl::math::Vector >(*this->start));
   this->begin[1] = this->addVertex(this->tree[1], ::std::make_shared< ::rl::math::Vector >(*this->goal));
 
+
+
   Tree* a = &this->tree[0];
   Tree* b = &this->tree[1];
 
   ::rl::math::Vector chosen(this->model->getDof());
 
+  //calculate direction in c-space from start to goal
+  Eigen::VectorXd start_to_goal = (*this->goal) - (*this->start);
+
+  //calculate length between start and goal
+  this->lengthStartGoal = start_to_goal.norm();
+
+  //calculate orthonormal basis including the first direction as the 0th entry
+  this->Q = YourPlanner::generateOrthonormalBasis(start_to_goal);
 
   while ((::std::chrono::steady_clock::now() - this->time) < this->duration)
   {
@@ -333,7 +408,6 @@ YourPlanner::solve()
     for (::std::size_t j = 0; j < 2; ++j)
     {
       //Sample a random configuration
-      
       this->choose(chosen, &this->tree[0] == a ? *this->goal : *this->start);
 
       //Find the nearest neighbour in the tree

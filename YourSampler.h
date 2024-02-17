@@ -22,6 +22,8 @@ namespace rl
             ::rl::math::Vector generate();
             ::rl::math::Vector generateGaussian();
             ::rl::math::Vector generateBridge();
+            ::rl::math::Vector generateGaussianAlongCPath(const Eigen::MatrixXd& Q, const double lengthAB);
+
 
             virtual void seed(const ::std::mt19937::result_type& value);
             void setSigma(const ::rl::math::Real delta);
