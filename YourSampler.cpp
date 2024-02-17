@@ -87,6 +87,14 @@ namespace rl
                 {
                     sampleq(i) = minimum(i) + this->rand() * (maximum(i) - minimum(i));
                 }
+
+                this->model->clip(sampleq);
+                this->model->setPosition(sampleq);
+                this->model->updateFrames();
+                if(this->model->isColliding()){
+                    continue;
+                }
+
                 // Check if sample is valid
                 ::rl::math::Vector sampleqgaussl(this->model->getDof());
                 ::rl::math::Vector sampleqgaussr(this->model->getDof());
@@ -95,6 +103,7 @@ namespace rl
                     sampleqgaussr(i) = sampleq(i) + this->gauss() * this->sigma(i);
                     sampleqgaussl(i) = sampleq(i) - this->gauss() * this->sigma(i);
                 }
+
                 this->model->clip(sampleqgaussl);
                 this->model->setPosition(sampleqgaussl);
                 this->model->updateFrames();
@@ -102,6 +111,7 @@ namespace rl
                 if (!validl){
                     continue;
                 }
+
                 this->model->clip(sampleqgaussr);
                 this->model->setPosition(sampleqgaussr);
                 this->model->updateFrames();
@@ -120,6 +130,7 @@ namespace rl
             // Q.col(0) is the direction vector from "start" to "goal"
             // we multiply this by a random length in [0, length(start->goal)]
             ::rl::math::Vector sampleq = Q.col(0) * (this->rand() * lengthStartGoal); // Initial point along A-B
+
 
             for (int i = 1; i < Q.cols(); ++i)
             {
