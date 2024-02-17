@@ -15,6 +15,7 @@
 #include <rl/plan/TransformPtr.h>
 #include <rl/plan/VectorPtr.h>
 #include <rl/plan/Verifier.h>
+#include "YourSampler.h"
 
 using namespace ::rl::plan;
 /**
@@ -51,12 +52,23 @@ public:
   ::rl::math::Real epsilon;
 
   /** The sampler used for planning */
-  ::rl::plan::Sampler* sampler;
+  ::rl::plan::YourSampler* sampler;
+
+  uint most_fails = 0;
 
   bool use_goal_bias = false;
+  bool use_neighbor_exhaustion = false;
+  bool use_gaussian_sampling = false;
+  bool use_bridge_sampling = false;
+  bool use_better_connect = false;
+  bool use_weighted_distance_metric = false;
+  bool use_gaussian_along_c_path = false;
+  int exhaustion_limit = 50;
   float goal_bias = 0.05;
+  ::rl::math::Real sigma = 0.1;
   ::std::string name = "Test";//"GoalProbability" + ::std::to_string(goal_bias);
-
+  Eigen::MatrixXd Q;
+  double lengthStartGoal;
 
 protected:
   /////////////////////////////////////////////////////////////////////////
@@ -75,6 +87,8 @@ protected:
     ::rl::math::Real tmp;
 
     bool exhausted = false;
+    uint fails = 0;
+    uint successes = 0;
   };
 
   typedef ::boost::adjacency_list_traits<
@@ -135,6 +149,9 @@ protected:
 
   /** Returns the nearest neighbour of chosen in tree*/
   virtual Neighbor nearest(const Tree& tree, const ::rl::math::Vector& chosen);
+
+  /**generates and orthonormal basis based on a given vector that will be included (in normalized form) in said basis*/
+  Eigen::MatrixXd generateOrthonormalBasis(const Eigen::VectorXd& v);
 
   ////////////////////////////////////////////////////////////////////////
   // members /////////////////////////////////////////////////////////////

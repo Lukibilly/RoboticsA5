@@ -20,13 +20,22 @@ namespace rl
             virtual ~YourSampler();
 
             ::rl::math::Vector generate();
+            ::rl::math::Vector generateGaussian();
+            ::rl::math::Vector generateBridge();
+            ::rl::math::Vector generateGaussianAlongCPath(const Eigen::MatrixXd& Q, const double lengthAB);
+
 
             virtual void seed(const ::std::mt19937::result_type& value);
+            void setSigma(const ::rl::math::Real delta);
+            
+            ::rl::math::Vector sigma;
 
         protected:
             ::std::uniform_real_distribution< ::rl::math::Real>::result_type rand();
+            ::std::normal_distribution< ::rl::math::Real>::result_type gauss();
 
             ::std::uniform_real_distribution< ::rl::math::Real> randDistribution;
+            ::std::normal_distribution< ::rl::math::Real> normalDistribution;
 
             ::std::mt19937 randEngine;
 
