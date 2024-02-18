@@ -161,7 +161,12 @@ namespace rl
 
             ::rl::math::Vector sampleq;
 
-            double sigma_for_line = 1;
+            // TODO test values 
+            // 0.1, 
+            // 0.2
+            // 0.5
+            // 1
+            double sigma_for_line = 1.25;
             double sigma_for_directions = 1;
 
             // 50/50 Chance (equally likely)

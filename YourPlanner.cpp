@@ -26,7 +26,7 @@ YourPlanner::YourPlanner() : Planner(),
   use_gaussian_along_c_path = true;
   use_gaussian_along_direction = true;
   sigma = 2 * this->delta;
-  name = "BridgeSampling2delta";
+  name = "use_gaussian_along_direction version 1.25";
 }
 
 YourPlanner::~YourPlanner()
